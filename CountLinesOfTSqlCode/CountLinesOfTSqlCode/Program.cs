@@ -26,106 +26,98 @@ namespace CountLinesOfTSqlCode
                 PrintArgs();
                 return;
             }
-            
+
+            bool detailedOutput = DetailedOutput();
+
             var scripts = GetScriptsInModel(args[0]);
-
-
-            var parser = new TSql110Parser(true);
+            
+            
+            var lineCount = 0;
 
             foreach (var script in scripts)
             {
-                var reader = new StringReader(script) as TextReader;
+                var scriptLineCount = GetStatementCountFromFile(script);
+
+                lineCount += scriptLineCount;
+    
+                if (detailedOutput)
+                {
+                    Console.WriteLine("{0} contains: {1} statements", script.Name, scriptLineCount);
+                }
+            }
+
+            Console.WriteLine(lineCount);
+        }
+
+        private static int GetStatementCountFromFile(CodeUnit script)
+        {
+            try
+            {
+                var parser = new TSql110Parser(true);
+                var reader = new StringReader(script.Code) as TextReader;
                 IList<ParseError> errors = null;
                 var fragment = parser.Parse(reader, out errors);
-                SQLVisitor visitor = new SQLVisitor("");
+
+                var visitor = new SqlVisitor(script.Name);
                 fragment.AcceptChildren(visitor);
-                visitor.DumpStatistics(); 
+                return visitor.StatementCount;
             }
-
-        }
-
-    class SQLVisitor : TSqlFragmentVisitor 
-    {
-        private readonly string _proc;
-        private int SELECTcount = 0; 
-        private int INSERTcount = 0; 
-        private int UPDATEcount = 0; 
-        private int DELETEcount = 0;
-
-        public SQLVisitor(string proc)
-        {
-            _proc = proc;
-        }
-
-        private string GetNodeTokenText(TSqlFragment fragment) 
-        { 
-            StringBuilder tokenText = new StringBuilder(); 
-            for (int counter = fragment.FirstTokenIndex; counter <= fragment.LastTokenIndex; counter++) 
-            { 
-                tokenText.Append(fragment.ScriptTokenStream[counter].Text); 
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error parsing script: \"{0}\" error: \"{1}\"", script.Name, ex.Message);
+                return 0;
             }
-
-            return tokenText.ToString(); 
         }
 
-        private int statementCount = -1;
-
-        public override void Visit(TSqlStatement node)
+        private static bool DetailedOutput()
         {
-            statementCount++;
-            Console.WriteLine("found statement statement with text: " + GetNodeTokenText(node));
+            return Environment.CommandLine.ToLowerInvariant().IndexOf("detailed") > -1;
         }
 
-        
-        public void DumpStatistics() 
-        { 
-            Console.WriteLine(string.Format("Found {0} statements in proc: {1}", 
-               statementCount , _proc)); 
-        } 
-    } 
-
-        private static List<string> GetScriptsInModel(string fileName)
+        private static IEnumerable<CodeUnit> GetScriptsInModel(string fileName)
         {
-            var scripts = new List<string>();
+            var scripts = new List<CodeUnit>();
 
             var model = new TSqlModel(fileName, DacSchemaModelStorageType.File);
 
-            foreach (var procedure in model.GetObjects(DacQueryScopes.Default, Procedure.TypeClass))
-            {
-                AddScript(procedure, scripts);
-            }
-
-            foreach (var func in model.GetObjects(DacQueryScopes.Default, ScalarFunction.TypeClass))
-            {
-                AddScript(func, scripts);
-            }
-
-            foreach (var func in model.GetObjects(DacQueryScopes.Default, TableValuedFunction.TypeClass))
-            {
-                AddScript(func, scripts);
-            }
-
-            foreach (var trigger in model.GetObjects(DacQueryScopes.Default, DmlTrigger.TypeClass))
-            {
-                AddScript(trigger, scripts);
-            }
+            scripts.AddRange(GetCodeUnits(model.GetObjects(DacQueryScopes.Default, Procedure.TypeClass)));
+            scripts.AddRange(GetCodeUnits(model.GetObjects(DacQueryScopes.Default, ScalarFunction.TypeClass)));
+            scripts.AddRange(GetCodeUnits(model.GetObjects(DacQueryScopes.Default, TableValuedFunction.TypeClass)));
+            scripts.AddRange(GetCodeUnits(model.GetObjects(DacQueryScopes.Default, DmlTrigger.TypeClass)));
 
             return scripts;
         }
 
-        private static void AddScript(TSqlObject procedure, List<string> scripts)
+        private static IEnumerable<CodeUnit> GetCodeUnits(IEnumerable<TSqlObject> objects )
+        {
+            var units = new List<CodeUnit>();
+
+            foreach (var trigger in objects)
+            {
+                units.Add(new CodeUnit()
+                {
+                    Name = trigger.Name.ToString(),
+                    Code = GetScript(trigger)
+                });
+            }
+
+            return units;
+        } 
+
+
+        private static string GetScript(TSqlObject procedure)
         {
             var script = "";
             if (procedure.TryGetScript(out script))
-            {
-                scripts.Add(script);
-            }
+                return script;
+
+            return "";  //could throw an exception or logged this if we care??
         }
 
 
         private static void PrintArgs()
         {
-            Console.WriteLine("IndexProperties DacFx Api Sample:\r\n\r\n\tDumpIndexProperties PathToDacFile\r\n");
+            Console.WriteLine("IndexProperties DacFx Api Sample:\r\n\r\n\tCountLinesOfTSqlCode PathToDacFile [/detailed]\r\n");
         }
 
         private static bool CheckArg(string arg, string argToCheck)
