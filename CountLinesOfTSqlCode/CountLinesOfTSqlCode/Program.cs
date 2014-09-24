@@ -58,6 +58,18 @@ namespace CountLinesOfTSqlCode
                 IList<ParseError> errors = null;
                 var fragment = parser.Parse(reader, out errors);
 
+                if (errors != null)
+                {
+                    Console.WriteLine("Error unable to parse script file: \"{0}\"", script.Name);
+
+                    foreach (var error in errors)
+                    {
+                        Console.WriteLine(error.Message);
+                    }
+
+                    return 0;
+                }
+
                 var visitor = new SqlVisitor(script.Name);
                 fragment.AcceptChildren(visitor);
                 return visitor.StatementCount;
