@@ -58,7 +58,7 @@ namespace CountLinesOfTSqlCode
                 IList<ParseError> errors = null;
                 var fragment = parser.Parse(reader, out errors);
 
-                if (errors != null)
+                if (errors != null && errors.Count> 0)
                 {
                     Console.WriteLine("Error unable to parse script file: \"{0}\"", script.Name);
 
